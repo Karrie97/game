@@ -20,6 +20,8 @@
   .dot{width:18px;height:18px;border-radius:50%}
   footer{margin-top:auto;padding:12px;text-align:center;font-size:13px;color:#666}
   .hidden{display:none}
+  .markerList{margin-top:8px;font-size:13px;color:#444}
+  .markerRow{padding:6px;background:#fbfbfb;border-radius:6px;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -52,21 +54,32 @@
         <div id="progressDots"></div>
         <div style="margin-left:auto"><span id="msg">准备中</span></div>
         <button id="nextBtn" class="hidden small">下一张</button>
+        <button id="markModeBtn" class="small" style="margin-left:8px;background:#666">标注模式</button>
       </div>
+
+      <div id="markerList" class="markerList hidden">
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <button id="copyMarkers" class="small">复制为 JSON</button>
+          <button id="clearMarkers" class="small">清除标注</button>
+          <div style="margin-left:auto;color:#888;font-size:13px">点击右图可以记录坐标（标注模式）</div>
+        </div>
+        <div id="markerRows"></div>
+      </div>
+
     </div>
   </main>
 
   <footer>把此文件与图片放在同一目录，或修改 imageMap 为你自己的 URL。</footer>
 
 <script>
-// 使用已上传到仓库的实际文件名，以避免重命名步骤
+// 已替换为你上传的新文件名（关卡3 右图）
 const imageMap = {
   IMAGE_1: '1.jpg — 关卡1 原图（left）.jpg',
   IMAGE_2: '2.jpg — 关卡1 差异图（right）.jpg',
   IMAGE_3: '3.jpg — 关卡2 原图（left）.jpg',
   IMAGE_4: '4.jpg — 关卡2 差异图（right）.jpg',
   IMAGE_5: '5.jpg — 关卡3 原图（left）.jpg',
-  IMAGE_6: '6.jpg — 关卡3 差异图（right）.jpg'
+  IMAGE_6: '关卡3差异图（右）改.jpg'
 };
 
 const levels = [
@@ -117,7 +130,7 @@ const levels = [
   }
 ];
 
-// 游戏逻辑（无需修改）
+// 游戏逻辑（与原逻辑保持兼容）
 let levelIndex = 0, sceneIndex = 0, found = [], score = 0, timer=0, timerId=null;
 const leftImage = document.getElementById('leftImage');
 const rightImage = document.getElementById('rightImage');
@@ -129,6 +142,47 @@ const msg = document.getElementById('msg');
 const nextBtn = document.getElementById('nextBtn');
 const scoreEl = document.getElementById('score');
 const timerEl = document.getElementById('timer');
+
+// 标注模式相关
+let markMode = false;
+const markModeBtn = document.getElementById('markModeBtn');
+const markerListEl = document.getElementById('markerList');
+const markerRows = document.getElementById('markerRows');
+const copyMarkersBtn = document.getElementById('copyMarkers');
+const clearMarkersBtn = document.getElementById('clearMarkers');
+let markers = [];
+
+markModeBtn.addEventListener('click', ()=>{
+  markMode = !markMode;
+  markModeBtn.style.background = markMode ? '#2b8cff' : '#666';
+  markerListEl.classList.toggle('hidden', !markMode);
+  if(markMode) markerRows.scrollTop = 0;
+});
+
+copyMarkersBtn.addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(JSON.stringify(markers, null, 2));
+    alert('已复制坐标到剪贴板');
+  }catch(e){
+    console.error(e);
+    alert('复制失败，请在控制台查看坐标');
+  }
+});
+clearMarkersBtn.addEventListener('click', ()=>{
+  markers = [];
+  markerRows.innerHTML = '';
+  drawAll();
+});
+
+function addMarker(px,py,r=0.05){
+  const obj = {x: +px.toFixed(3), y: +py.toFixed(3), r: +r.toFixed(3)};
+  markers.push(obj);
+  const row = document.createElement('div');
+  row.className = 'markerRow';
+  row.textContent = `x: ${obj.x}, y: ${obj.y}, r: ${obj.r}`;
+  markerRows.appendChild(row);
+  drawAll();
+}
 
 function startTimer(){ if(timerId) clearInterval(timerId); timer = 0; timerEl.textContent = timer + 's'; timerId = setInterval(()=>{ timer++; timerEl.textContent = timer + 's'; },1000); }
 function stopTimer(){ if(timerId){ clearInterval(timerId); timerId=null; } }
@@ -178,6 +232,7 @@ function drawAll(){
   const ctx = hitCanvas.getContext('2d');
   ctx.clearRect(0,0,hitCanvas.width, hitCanvas.height);
   const scene = levels[levelIndex].scenes[sceneIndex];
+  // 画已找到的标记
   scene.differences.forEach((d,i)=>{
     if(found[i]){
       const cx = d.x * hitCanvas.width;
@@ -192,6 +247,16 @@ function drawAll(){
       ctx.fill();
     }
   });
+  // 如果在标注模式，绘制临时标注点
+  if(markers.length){
+    markers.forEach(m=>{
+      const cx = m.x * hitCanvas.width;
+      const cy = m.y * hitCanvas.height;
+      const rr = m.r * hitCanvas.width;
+      ctx.beginPath(); ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 3; ctx.arc(cx,cy,rr,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,107,107,0.12)'; ctx.fill();
+    });
+  }
 }
 function redrawMarks(){ drawAll(); }
 
@@ -202,6 +267,15 @@ rightWrap.addEventListener('click', (ev)=>{
   const offsetY = ev.clientY - rect.top;
   const px = offsetX / rect.width;
   const py = offsetY / rect.height;
+
+  if(markMode){
+    // 标注模式：记录并显示坐标，不触发游戏命中逻辑
+    const r = 0.05; // 默认半径，可由你在场景中调整
+    addMarker(px,py,r);
+    console.log('marker', {x:px.toFixed(3), y:py.toFixed(3), r: r.toFixed(3)});
+    return;
+  }
+
   const scene = levels[levelIndex].scenes[sceneIndex];
   let hit = -1;
   scene.differences.forEach((d,i)=>{
