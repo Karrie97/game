@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>找不同 - 三关（首页）</title>
+<title>找不同 - 随机 2 关（首页）</title>
 <style>
   :root{--bg:#f4f7fb;--card:#fff;--accent:#2b8cff;--ok:#2ecc71;--miss:#ff6b6b}
   body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#222;display:flex;flex-direction:column;min-height:100vh}
@@ -25,7 +25,7 @@
 <body>
   <header style="padding:12px 16px;border-bottom:1px solid #e6eefb;background:#fff">
     <div class="container" style="display:flex;align-items:center">
-      <h2 style="margin:0">找不同（3 关）</h2>
+      <h2 style="margin:0">找不同（随机 2 关）</h2>
       <div style="margin-left:auto">得分：<span id="score">0</span> 用时：<span id="timer">0s</span></div>
     </div>
   </header>
@@ -56,7 +56,7 @@
     </div>
   </main>
 
-  <footer>把此文件与图片放在同一目录，或修改 imageMap 为你自己的 URL。</footer>
+  <footer>把此文件与图片放在同一目录，或修改 imageMap 为你自己的 URL。请选择或上传新的 第三组 差异图并把文件名填入 imageMap 中的 IMAGE_6。</footer>
 
 <script>
 // 使用仓库中已存在的实际文件名（包含中文和空格）以保证页面能直接加载图片
@@ -117,7 +117,7 @@ const levels = [
   }
 ];
 
-// 游戏逻辑（无需修改）
+// 游戏逻辑（修改：随机抽取两个关卡来玩）
 let levelIndex = 0, sceneIndex = 0, found = [], score = 0, timer=0, timerId=null;
 const leftImage = document.getElementById('leftImage');
 const rightImage = document.getElementById('rightImage');
@@ -129,6 +129,9 @@ const msg = document.getElementById('msg');
 const nextBtn = document.getElementById('nextBtn');
 const scoreEl = document.getElementById('score');
 const timerEl = document.getElementById('timer');
+
+// 新增：保存将要玩的关卡顺序（存为 levels 的索引数组）
+let levelOrder = [];
 
 function startTimer(){ if(timerId) clearInterval(timerId); timer = 0; timerEl.textContent = timer + 's'; timerId = setInterval(()=>{ timer++; timerEl.textContent = timer + 's'; },1000); }
 function stopTimer(){ if(timerId){ clearInterval(timerId); timerId=null; } }
@@ -147,10 +150,23 @@ function resizeCanvas(){
 window.addEventListener('resize', resizeCanvas);
 rightImage.addEventListener('load', resizeCanvas);
 
+function currentLevel(){ return levels[levelOrder[levelIndex]]; }
+function currentScene(){ const lvl = currentLevel(); return lvl.scenes[sceneIndex]; }
+
+// 从数组中随机抽取 n 个元素（不重复）
+function pickRandomN(arr, n){
+  const copy = arr.slice();
+  for(let i = copy.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, n);
+}
+
 function loadScene(){
   if(!levels.length){ msg.textContent = '没有关卡数据。'; return; }
-  const level = levels[levelIndex];
-  const scene = level.scenes[sceneIndex];
+  const level = currentLevel();
+  const scene = currentScene();
   levelTitle.textContent = `${level.name} — ${scene.title}`;
   leftImage.src = scene.leftSrc;
   rightImage.src = scene.rightSrc;
@@ -164,7 +180,7 @@ function loadScene(){
 
 function renderDots(){
   progressDots.innerHTML = '';
-  const scene = levels[levelIndex].scenes[sceneIndex];
+  const scene = currentScene();
   for(let i=0;i<scene.differences.length;i++){
     const el = document.createElement('div');
     el.className = 'dot';
@@ -177,7 +193,7 @@ function renderDots(){
 function drawAll(){
   const ctx = hitCanvas.getContext('2d');
   ctx.clearRect(0,0,hitCanvas.width, hitCanvas.height);
-  const scene = levels[levelIndex].scenes[sceneIndex];
+  const scene = currentScene();
   scene.differences.forEach((d,i)=>{
     if(found[i]){
       const cx = d.x * hitCanvas.width;
@@ -202,7 +218,7 @@ rightWrap.addEventListener('click', (ev)=>{
   const offsetY = ev.clientY - rect.top;
   const px = offsetX / rect.width;
   const py = offsetY / rect.height;
-  const scene = levels[levelIndex].scenes[sceneIndex];
+  const scene = currentScene();
   let hit = -1;
   scene.differences.forEach((d,i)=>{
     if(found[i]) return;
@@ -217,10 +233,16 @@ rightWrap.addEventListener('click', (ev)=>{
     scoreEl.textContent = score;
     renderDots();
     drawAll();
-    msg.textContent = `找到 ${found.filter(Boolean).length} / ${scene.differences.length} 处`;
-    if(found.every(Boolean)){
-      msg.textContent = '本张完成！';
+    const foundCount = found.filter(Boolean).length;
+    msg.textContent = `找到 ${foundCount} / ${scene.differences.length} 处`;
+    if(foundCount >= scene.differences.length){
       nextBtn.classList.remove('hidden');
+      // 如果本场是最后一个被抽中的关卡，直接结束
+      if(levelIndex >= levelOrder.length - 1){
+        stopTimer();
+        alert(`恭喜完成所有分配的关卡！得分：${score}，用时：${timer}s`);
+        return;
+      }
     }
   } else {
     const ctx = hitCanvas.getContext('2d');
@@ -232,26 +254,33 @@ rightWrap.addEventListener('click', (ev)=>{
 });
 
 nextBtn.addEventListener('click', ()=>{
-  sceneIndex++;
-  const level = levels[levelIndex];
-  if(sceneIndex >= level.scenes.length){
-    levelIndex++;
-    if(levelIndex >= levels.length){
-      stopTimer();
-      alert(`恭喜完成全部关卡！得分：${score}，用时：${timer}s`);
-      return;
-    } else {
-      sceneIndex = 0;
-      alert(`进入 ${levels[levelIndex].name}`);
-    }
+  // 移动到下一个关卡
+  levelIndex++;
+  sceneIndex = 0;
+  if(levelIndex >= levelOrder.length){
+    // 已完成所有被抽中的关卡
+    stopTimer();
+    alert(`恭喜完成所有分配的关卡！得分：${score}，用时：${timer}s`);
+    return;
+  } else {
+    alert(`进入 ${levels[levelOrder[levelIndex]].name}`);
   }
   loadScene();
 });
 
 // 初始化
 function init(){
-  if(levels.length && levels[0].scenes.length) loadScene();
-  else msg.textContent = '当前没有关卡数据。';
+  if(!(levels.length && levels[0].scenes.length)){
+    msg.textContent = '当前没有关卡数据。';
+    return;
+  }
+  // 随机抽取两个不同的关卡索引
+  const allIdx = levels.map((_,i)=>i);
+  levelOrder = pickRandomN(allIdx, Math.min(2, levels.length));
+  // 可选：把 levelOrder 保存到 localStorage，避免刷新改变
+  try{ localStorage.setItem('levelOrder', JSON.stringify(levelOrder)); }catch(e){}
+  levelIndex = 0; sceneIndex = 0;
+  loadScene();
 }
 init();
 
